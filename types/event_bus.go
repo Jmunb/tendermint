@@ -2,7 +2,10 @@ package types
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net"
+	"os"
 
 	"github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/libs/log"
@@ -11,6 +14,9 @@ import (
 )
 
 const defaultCapacity = 0
+const SockAddr = "/tmp/osmosisd.sock"
+
+var connection net.Conn
 
 type EventBusSubscriber interface {
 	Subscribe(ctx context.Context, subscriber string, query tmpubsub.Query, outCapacity ...int) (Subscription, error)
@@ -35,6 +41,12 @@ type EventBus struct {
 	pubsub *tmpubsub.Server
 }
 
+type UnixData struct {
+	Event string `json:"event"`
+	Data  any    `json:"data"`
+	Hash  any    `json:"hash"`
+}
+
 // NewEventBus returns a new event bus.
 func NewEventBus() *EventBus {
 	return NewEventBusWithBufferCapacity(defaultCapacity)
@@ -42,11 +54,34 @@ func NewEventBus() *EventBus {
 
 // NewEventBusWithBufferCapacity returns a new event bus with the given buffer capacity.
 func NewEventBusWithBufferCapacity(cap int) *EventBus {
+	go CreateUnixSocket()
 	// capacity could be exposed later if needed
 	pubsub := tmpubsub.NewServer(tmpubsub.BufferCapacity(cap))
 	b := &EventBus{pubsub: pubsub}
 	b.BaseService = *service.NewBaseService(nil, "EventBus", b)
 	return b
+}
+
+func CreateUnixSocket() {
+	if err := os.RemoveAll(SockAddr); err != nil {
+		panic(err)
+	}
+
+	listener, err := net.Listen("unix", SockAddr)
+	if err != nil {
+		panic(err)
+	}
+	defer listener.Close()
+
+	fmt.Println("Server is listening...")
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		connection = conn
+	}
 }
 
 func (b *EventBus) SetLogger(l log.Logger) {
@@ -131,7 +166,20 @@ func (b *EventBus) validateAndStringifyEvents(events []types.Event, logger log.L
 	return result
 }
 
+func PublishSocketEvent(event string, data any, hash any) {
+	if connection != nil {
+		jsonData, err := json.Marshal(&UnixData{Event: event, Data: data, Hash: hash})
+		if err != nil {
+			panic(err)
+		}
+		outString := string(jsonData)
+		connection.Write([]byte(outString))
+	}
+}
+
 func (b *EventBus) PublishEventNewBlock(data EventDataNewBlock) error {
+	PublishSocketEvent("block", data.Block, data.Block.Hash())
+
 	// no explicit deadline for publishing events
 	ctx := context.Background()
 
@@ -174,6 +222,8 @@ func (b *EventBus) PublishEventValidBlock(data EventDataRoundState) error {
 // predefined keys (EventTypeKey, TxHashKey). Existing events with the same keys
 // will be overwritten.
 func (b *EventBus) PublishEventTx(data EventDataTx) error {
+	PublishSocketEvent("tx", data.Tx, fmt.Sprintf("%X", Tx(data.Tx).Hash()))
+
 	// no explicit deadline for publishing events
 	ctx := context.Background()
 
@@ -185,6 +235,12 @@ func (b *EventBus) PublishEventTx(data EventDataTx) error {
 	events[TxHeightKey] = append(events[TxHeightKey], fmt.Sprintf("%d", data.Height))
 
 	return b.pubsub.PublishWithEvents(ctx, data, events)
+}
+
+// PublishEventMemTx
+func (b *EventBus) PublishEventMemTx(memTx []byte) error {
+	PublishSocketEvent("memtx", memTx, fmt.Sprintf("%X", Tx(memTx).Hash()))
+	return nil
 }
 
 func (b *EventBus) PublishEventNewRoundStep(data EventDataRoundState) error {

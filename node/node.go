@@ -371,6 +371,7 @@ func createMempoolAndMempoolReactor(
 	proxyApp proxy.AppConns,
 	state sm.State,
 	memplMetrics *mempl.Metrics,
+	eventBus *types.EventBus,
 	logger log.Logger,
 ) (mempl.Mempool, p2p.Reactor) {
 
@@ -401,6 +402,7 @@ func createMempoolAndMempoolReactor(
 			config.Mempool,
 			proxyApp.Mempool(),
 			state.LastBlockHeight,
+			eventBus,
 			mempoolv0.WithMetrics(memplMetrics),
 			mempoolv0.WithPreCheck(sm.TxPreCheck(state)),
 			mempoolv0.WithPostCheck(sm.TxPostCheck(state)),
@@ -797,7 +799,7 @@ func NewNode(config *cfg.Config,
 	csMetrics, p2pMetrics, memplMetrics, smMetrics := metricsProvider(genDoc.ChainID)
 
 	// Make MempoolReactor
-	mempool, mempoolReactor := createMempoolAndMempoolReactor(config, proxyApp, state, memplMetrics, logger)
+	mempool, mempoolReactor := createMempoolAndMempoolReactor(config, proxyApp, state, memplMetrics, eventBus, logger)
 
 	// Make Evidence Reactor
 	evidenceReactor, evidencePool, err := createEvidenceReactor(config, dbProvider, stateDB, blockStore, logger)

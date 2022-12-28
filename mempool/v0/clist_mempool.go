@@ -57,8 +57,9 @@ type CListMempool struct {
 	// This reduces the pressure on the proxyApp.
 	cache mempool.TxCache
 
-	logger  log.Logger
-	metrics *mempool.Metrics
+	eventBus *types.EventBus
+	logger   log.Logger
+	metrics  *mempool.Metrics
 }
 
 var _ mempool.Mempool = &CListMempool{}
@@ -72,6 +73,7 @@ func NewCListMempool(
 	cfg *config.MempoolConfig,
 	proxyAppConn proxy.AppConnMempool,
 	height int64,
+	eventBus *types.EventBus,
 	options ...CListMempoolOption,
 ) *CListMempool {
 
@@ -82,6 +84,7 @@ func NewCListMempool(
 		height:        height,
 		recheckCursor: nil,
 		recheckEnd:    nil,
+		eventBus:      eventBus,
 		logger:        log.NewNopLogger(),
 		metrics:       mempool.NopMetrics(),
 	}
@@ -314,6 +317,10 @@ func (mem *CListMempool) reqResCb(
 // Called from:
 //   - resCbFirstTime (lock not held) if tx is valid
 func (mem *CListMempool) addTx(memTx *mempoolTx) {
+	if err := mem.eventBus.PublishEventMemTx([]byte(memTx.tx)); err != nil {
+		mem.logger.Error("failed publishing event MemTX", "err", err)
+	}
+
 	e := mem.txs.PushBack(memTx)
 	mem.txsMap.Store(memTx.tx.Key(), e)
 	atomic.AddInt64(&mem.txsBytes, int64(len(memTx.tx)))
