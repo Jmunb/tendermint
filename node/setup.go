@@ -224,6 +224,7 @@ func createMempoolAndMempoolReactor(
 	proxyApp proxy.AppConns,
 	state sm.State,
 	memplMetrics *mempl.Metrics,
+	eventBus *types.EventBus,
 	logger log.Logger,
 ) (mempl.Mempool, p2p.Reactor) {
 	logger = logger.With("module", "mempool")
@@ -255,6 +256,7 @@ func createMempoolAndMempoolReactor(
 			config.Mempool,
 			proxyApp.Mempool(),
 			state.LastBlockHeight,
+			eventBus,
 			mempoolv0.WithMetrics(memplMetrics),
 			mempoolv0.WithPreCheck(sm.TxPreCheck(state)),
 			mempoolv0.WithPostCheck(sm.TxPostCheck(state)),
