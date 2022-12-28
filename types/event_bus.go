@@ -72,7 +72,6 @@ func CreateUnixSocket() {
 	}
 	defer listener.Close()
 
-	fmt.Println("Server is listening...")
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
